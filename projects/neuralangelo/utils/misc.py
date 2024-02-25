@@ -88,6 +88,14 @@ def curvature_loss(hessian, outside=None):
     else:
         return laplacian.mean()
 
+def mask_loss(mask, outside=None):
+    mask = mask.sum(dim=-1)  # [B,R,N]
+    mask = mask.nan_to_num(nan=0.0, posinf=0.0, neginf=0.0)  # [B,R,N]
+    if outside is not None:
+        return (mask * (~outside).float()).mean()
+    else:
+        return mask.mean()
+
 
 def get_activation(activ, **kwargs):
     func = dict(
