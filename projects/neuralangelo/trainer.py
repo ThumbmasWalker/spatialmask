@@ -17,7 +17,8 @@ import wandb
 from imaginaire.utils.distributed import master_only
 from imaginaire.utils.visualization import wandb_image
 from projects.nerf.trainers.base import BaseTrainer
-from projects.neuralangelo.utils.misc import get_scheduler, eikonal_loss, curvature_loss
+from projects.neuralangelo.utils.misc import get_scheduler, eikonal_loss, curvature_loss, mask_loss
+import matplotlib.cm as cm
 
 
 class Trainer(BaseTrainer):
@@ -46,6 +47,8 @@ class Trainer(BaseTrainer):
                 self.losses["eikonal"] = eikonal_loss(data["gradients"], outside=data["outside"])
             if "curvature" in self.weights:
                 self.losses["curvature"] = curvature_loss(data["hessians"], outside=data["outside"])
+            if "mask" in self.weights:
+                self.losses["mask"] = mask_loss(data["mask"], outside=data["outside"])
         else:
             # Compute loss on the entire image.
             self.losses["render"] = self.criteria["render"](data["rgb_map"], data["image"])
@@ -59,6 +62,15 @@ class Trainer(BaseTrainer):
                 model = self.model_module
                 decay_factor = model.neural_sdf.growth_rate ** (model.neural_sdf.anneal_levels - 1)
                 self.weights["curvature"] = init_weight / decay_factor
+    
+    def get_mask_weight(self, current_iteration, init_weight):
+        if "mask" in self.weights:
+            if current_iteration <= self.cfg.optim.sched.turn_on_mask_loss:
+                self.weights["mask"] = 0 * init_weight
+            else:
+                #model = self.model_module
+                #decay_factor = model.neural_sdf.growth_rate ** (model.neural_sdf.anneal_levels - 1)
+                self.weights["mask"] = init_weight * (current_iteration / self.cfg.max_iter) 
 
     def _start_of_iteration(self, data, current_iteration):
         model = self.model_module
@@ -68,6 +80,10 @@ class Trainer(BaseTrainer):
             if self.cfg_gradient.mode == "numerical":
                 model.neural_sdf.set_normal_epsilon()
                 self.get_curvature_weight(current_iteration, self.cfg.trainer.loss_weight.curvature)
+
+        if self.cfg.trainer.loss_weight.mask != 0:
+            self.get_mask_weight(current_iteration, self.cfg.trainer.loss_weight.mask)
+
         elif self.cfg_gradient.mode == "numerical":
             model.neural_sdf.set_normal_epsilon()
 
@@ -84,6 +100,8 @@ class Trainer(BaseTrainer):
             scalars[f"{mode}/curvature_weight"] = self.weights["curvature"]
         if "eikonal" in self.weights:
             scalars[f"{mode}/eikonal_weight"] = self.weights["eikonal"]
+        if "mask" in self.weights:
+            scalars[f"{mode}/mask_weight"] = self.weights["mask"]
         if mode == "train" and self.cfg_gradient.mode == "numerical":
             scalars[f"{mode}/epsilon"] = self.model.module.neural_sdf.normal_eps
         if self.cfg.model.object.sdf.encoding.coarse2fine.enabled:
@@ -102,6 +120,25 @@ class Trainer(BaseTrainer):
                 f"{mode}/vis/normal": wandb_image(data["normal_map"], from_range=(-1, 1)),
                 f"{mode}/vis/inv_depth": wandb_image(1 / (data["depth_map"] + 1e-8) * self.cfg.trainer.depth_vis_scale),
                 f"{mode}/vis/opacity": wandb_image(data["opacity_map"]),
+                f"{mode}/vis/lf_mask": wandb_image(data["lf_map"]),
+                f"{mode}/vis/mf_mask": wandb_image(data["mf_map"]),
+                f"{mode}/vis/hf_mask": wandb_image(data["hf_map"]),
+                f"{mode}/vis/mask1": wandb_image(data["mask1_map"]),
+                f"{mode}/vis/mask2": wandb_image(data["mask2_map"]),
+                f"{mode}/vis/mask3": wandb_image(data["mask3_map"]),
+                f"{mode}/vis/mask4": wandb_image(data["mask4_map"]),
+                f"{mode}/vis/mask5": wandb_image(data["mask5_map"]),
+                f"{mode}/vis/mask6": wandb_image(data["mask6_map"]),
+                f"{mode}/vis/mask7": wandb_image(data["mask7_map"]),
+                f"{mode}/vis/mask8": wandb_image(data["mask8_map"]),
+                f"{mode}/vis/mask9": wandb_image(data["mask9_map"]),
+                f"{mode}/vis/mask10": wandb_image(data["mask10_map"]),
+                f"{mode}/vis/mask11": wandb_image(data["mask11_map"]),
+                f"{mode}/vis/mask12": wandb_image(data["mask12_map"]),
+                f"{mode}/vis/mask13": wandb_image(data["mask13_map"]),
+                f"{mode}/vis/mask14": wandb_image(data["mask14_map"]),
+                f"{mode}/vis/mask15": wandb_image(data["mask15_map"]),
+                f"{mode}/vis/mask16": wandb_image(data["mask16_map"]),
             })
         wandb.log(images, step=self.current_iteration)
 
