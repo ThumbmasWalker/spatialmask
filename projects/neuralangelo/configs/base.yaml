@@ -1,20 +1,10 @@
-# -----------------------------------------------------------------------------
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
-#
-# NVIDIA CORPORATION and its licensors retain all intellectual property
-# and proprietary rights in and to this software, related documentation
-# and any modifications thereto. Any use, reproduction, disclosure or
-# distribution of this software and related documentation without an express
-# license agreement from NVIDIA CORPORATION is strictly prohibited.
-# -----------------------------------------------------------------------------
-
 logging_iter: 9999999999999  # disable the printing logger
 
 max_iter: 500000
 
 wandb_scalar_iter: 100
 wandb_image_iter: 10000
-validation_iter: 5000
+validation_iter: 1000
 speed_benchmark: False
 
 checkpoint:
@@ -28,7 +18,8 @@ trainer:
     loss_weight:
         render: 1.0
         eikonal: 0.1
-        curvature: 5e-4
+        curvature: 5e-5
+        mask: 1e-4
     init:
         type: none
     amp_config:
@@ -56,16 +47,35 @@ model:
                 hashgrid:
                     min_logres: 5
                     max_logres: 11
-                    dict_size: 22
+                    dict_size: 19
                     dim: 8
                     range: [-2,2]
                 coarse2fine:
                     enabled: True
                     init_active_level: 4
-                    step: 5000
+                    step: 4000
             gradient:
                 mode: numerical
                 taps: 4
+            spatialmask:
+                mlp:
+                    num_layers: 1
+                    hidden_dim: 16
+                    skip: []
+                    activ: sigmoid
+                    geometric_init: True
+                    weight_norm: True
+                    out_bias: 0.5
+                    inside_out: False
+                encoding:
+                    type: hashgrid
+                    levels: 16
+                    hashgrid:
+                        min_logres: 5
+                        max_logres: 11
+                        dict_size: 17
+                        dim: 4
+                        range: [-2,2]         
         rgb:
             mlp:
                 num_layers: 4
@@ -110,6 +120,7 @@ model:
             background: 32
         num_sample_hierarchy: 4
         stratified: True
+        render_mask: True
     appear_embed:
         enabled: False
         dim: 8
@@ -124,6 +135,7 @@ optim:
         type: two_steps_with_warmup
         warm_up_end: 5000
         two_steps: [300000,400000]
+        turn_on_mask_loss: 5000
         gamma: 10.0
 
 data:
