@@ -1,13 +1,14 @@
 # conda env create --file neuralangelo.yaml
-name: neuralangelo
+name: neuralangelo-gazi
 channels:
-  - conda-forge
   - pytorch
+  - nvidia
+  - conda-forge
 dependencies:
   # general
   - gpustat
   - gdown
-  - cudatoolkit-dev
+    #- cudatoolkit-dev
   - cmake
   # python general
   - python=3.8

@@ -123,6 +123,10 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
 
     def sdf(self, points_3D):
         return self.forward(points_3D, with_sdf=True, with_feat=False, with_mask=False)[0]
+    
+    def sdf_with_mask(self, points_3D):
+        out = self.forward(points_3D, with_sdf=True, with_feat=False, with_mask=True)
+        return out[0], out[2] 
 
     def mask_encode(self, points_3D):
         if self.cfg_sdf.encoding.type == "fourier":
@@ -228,16 +232,44 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
                 else:
                     hessian = None
             elif self.cfg_sdf.gradient.taps == 4:
-                eps = self.normal_eps / np.sqrt(3)
-                k1 = torch.tensor([1, -1, -1], dtype=x.dtype, device=x.device)  # [3]
-                k2 = torch.tensor([-1, -1, 1], dtype=x.dtype, device=x.device)  # [3]
-                k3 = torch.tensor([-1, 1, -1], dtype=x.dtype, device=x.device)  # [3]
-                k4 = torch.tensor([1, 1, 1], dtype=x.dtype, device=x.device)  # [3]
+                if self.cfg_sdf.gradient.masked_epsilon:
+                
+                     # FIX (UNHARDCODE)
+                    sdf, mask = self.sdf_with_mask(x)
+                    
+                    #selecting top 2 highest masks for epsilon decision  
+                    hf_mask, indxs = torch.max(mask[...,-5:-1], dim=-1)            
+                    
+                    #numbers selected so mask=0.1 matches largests chouce from neurangelo and 0.9 matches smallest
+                    #should this be detached?
+                        
+                    a = self.cfg_sdf.gradient.masked_epsilon_a
+                    b = self.cfg_sdf.gradient.masked_epsilon_b
+                    c = self.cfg_sdf.gradient.masked_epsilon_c
+
+                    eps =  (1/(a*torch.exp(b*(hf_mask.detach()-c)))).unsqueeze(-1)
+
+                    k1 = torch.tensor([1, -1, -1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
+                    k2 = torch.tensor([-1, -1, 1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
+                    k3 = torch.tensor([-1, 1, -1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
+                    k4 = torch.tensor([1, 1, 1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
+
+
+                else:    
+                    eps = self.normal_eps / np.sqrt(3)
+
+                    k1 = torch.tensor([1, -1, -1], dtype=x.dtype, device=x.device)  # [3]
+                    k2 = torch.tensor([-1, -1, 1], dtype=x.dtype, device=x.device)  # [3]
+                    k3 = torch.tensor([-1, 1, -1], dtype=x.dtype, device=x.device)  # [3]
+                    k4 = torch.tensor([1, 1, 1], dtype=x.dtype, device=x.device)  # [3]
+                
                 sdf1 = self.sdf(x + k1 * eps)  # [...,1]
                 sdf2 = self.sdf(x + k2 * eps)  # [...,1]
                 sdf3 = self.sdf(x + k3 * eps)  # [...,1]
                 sdf4 = self.sdf(x + k4 * eps)  # [...,1]
-                gradient = (k1*sdf1 + k2*sdf2 + k3*sdf3 + k4*sdf4) / (4.0 * eps)
+            
+                gradient = (k1*sdf1 + k2*sdf2 + k3*sdf3 + k4*sdf4) / (4.0 * eps)    
+
                 if training:
                     assert sdf is not None  # computed when feed-forwarding through the network
                     # the result of 4 taps is directly trace, but we assume they are individual components
@@ -248,6 +280,7 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
                     hessian = None
             else:
                 raise ValueError("Only support 4 or 6 taps.")
+            
         return gradient, hessian
 
 class NeuralSDF(torch.nn.Module):

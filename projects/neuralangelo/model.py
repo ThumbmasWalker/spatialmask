@@ -95,10 +95,12 @@ class Model(BaseModel):
           mask_maps = output['mask_image']
 
 
-          lf_mask, idxs = torch.max(mask_maps[:,:,0:2], dim=-1)
-          mf_mask, idxs = torch.max(mask_maps[:,:,2:8], dim=-1)
-          hf_mask, idxs = torch.max(mask_maps[:,:,8:], dim=-1)
+          lf_mask, idxs = torch.max(mask_maps[:,:,0:4], dim=-1)
+          lf_mask2, idxs = torch.max(mask_maps[:,:,4:8], dim=-1)
+          mf_mask, idxs = torch.max(mask_maps[:,:,8:14], dim=-1)
+          hf_mask, idxs = torch.max(mask_maps[:,:,14:16], dim=-1)
 
+          '''  
           mask1 = mask_maps[:,:,0]
           mask2 = mask_maps[:,:,1]
           mask3 = mask_maps[:,:,2]
@@ -115,28 +117,29 @@ class Model(BaseModel):
           mask14 = mask_maps[:,:,13]
           mask15 = mask_maps[:,:,14]
           mask16 = mask_maps[:,:,15]
-         
-        print(mask1.unsqueeze(dim=-1).shape)
+          '''
+        #print(mask1.unsqueeze(dim=-1).shape)
         output.update(
             lf_map=self.to_full_val_image(lf_mask.unsqueeze(dim=-1)),
+            lf2_map=self.to_full_val_image(lf_mask2.unsqueeze(dim=-1)),
             mf_map=self.to_full_val_image(mf_mask.unsqueeze(dim=-1)),
             hf_map=self.to_full_val_image(hf_mask.unsqueeze(dim=-1)),
-            mask1_map=self.to_full_val_image(mask1.unsqueeze(dim=-1)),
-            mask2_map=self.to_full_val_image(mask2.unsqueeze(dim=-1)),
-            mask3_map = self.to_full_val_image(mask3.unsqueeze(dim=-1)),
-            mask4_map = self.to_full_val_image(mask4.unsqueeze(dim=-1)),
-            mask5_map = self.to_full_val_image(mask5.unsqueeze(dim=-1)),
-            mask6_map = self.to_full_val_image(mask6.unsqueeze(dim=-1)),
-            mask7_map = self.to_full_val_image(mask7.unsqueeze(dim=-1)),
-            mask8_map = self.to_full_val_image(mask8.unsqueeze(dim=-1)),
-            mask9_map = self.to_full_val_image(mask9.unsqueeze(dim=-1)),
-            mask10_map = self.to_full_val_image(mask10.unsqueeze(dim=-1)),
-            mask11_map = self.to_full_val_image(mask11.unsqueeze(dim=-1)),
-            mask12_map = self.to_full_val_image(mask12.unsqueeze(dim=-1)),
-            mask13_map = self.to_full_val_image(mask13.unsqueeze(dim=-1)),
-            mask14_map = self.to_full_val_image(mask14.unsqueeze(dim=-1)),
-            mask15_map = self.to_full_val_image(mask15.unsqueeze(dim=-1)),
-            mask16_map = self.to_full_val_image(mask16.unsqueeze(dim=-1)),
+            #mask1_map=self.to_full_val_image(mask1.unsqueeze(dim=-1)),
+            #mask2_map=self.to_full_val_image(mask2.unsqueeze(dim=-1)),
+            #mask3_map = self.to_full_val_image(mask3.unsqueeze(dim=-1)),
+            #mask4_map = self.to_full_val_image(mask4.unsqueeze(dim=-1)),
+            #mask5_map = self.to_full_val_image(mask5.unsqueeze(dim=-1)),
+            #mask6_map = self.to_full_val_image(mask6.unsqueeze(dim=-1)),
+            #mask7_map = self.to_full_val_image(mask7.unsqueeze(dim=-1)),
+            #mask8_map = self.to_full_val_image(mask8.unsqueeze(dim=-1)),
+            #mask9_map = self.to_full_val_image(mask9.unsqueeze(dim=-1)),
+            #mask10_map = self.to_full_val_image(mask10.unsqueeze(dim=-1)),
+            #mask11_map = self.to_full_val_image(mask11.unsqueeze(dim=-1)),
+            #mask12_map = self.to_full_val_image(mask12.unsqueeze(dim=-1)),
+            #mask13_map = self.to_full_val_image(mask13.unsqueeze(dim=-1)),
+            #mask14_map = self.to_full_val_image(mask14.unsqueeze(dim=-1)),
+            #mask15_map = self.to_full_val_image(mask15.unsqueeze(dim=-1)),
+            #mask16_map = self.to_full_val_image(mask16.unsqueeze(dim=-1)),
             rgb_map=self.to_full_val_image(output["rgb"]),  # [B,3,H,W]
             opacity_map=self.to_full_val_image(output["opacity"]),  # [B,1,H,W]
             depth_map=self.to_full_val_image(output["depth"]),  # [B,1,H,W]

@@ -14,6 +14,7 @@ import torch
 import wandb
 from imaginaire.trainers.base import BaseTrainer
 from imaginaire.utils.distributed import is_master, master_only
+from imaginaire.utils.misc import to_cuda, requires_grad, to_cpu
 from tqdm import tqdm
 
 from projects.nerf.utils.misc import collate_test_data_batches, get_unique_test_data, trim_test_samples

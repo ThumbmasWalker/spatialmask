@@ -19,7 +19,7 @@ trainer:
         render: 1.0
         eikonal: 0.1
         curvature: 5e-4
-        mask: 0
+        mask: 1e-5
     init:
         type: none
     amp_config:
@@ -47,20 +47,16 @@ model:
                 hashgrid:
                     min_logres: 5
                     max_logres: 11
-                    dict_size: 22
+                    dict_size: 21
                     dim: 8
                     range: [-2,2]
                 coarse2fine:
                     enabled: True
                     init_active_level: 4
-                    step: 4000
+                    step: 5000
             gradient:
                 mode: numerical
                 taps: 4
-                masked_epsilon: True        
-                masked_epsilon_a: 50
-                masked_epsilon_b: 10
-                masked_epsilon_c: 0.25 
             spatialmask:
                 mlp:
                     num_layers: 1
@@ -77,11 +73,9 @@ model:
                     hashgrid:
                         min_logres: 5
                         max_logres: 11
-                        dict_size: 21
-                        dim: 4
-                        range: [-2,2]
-                    coarse2fine:
-                        enabled: False       
+                        dict_size: 19
+                        dim: 2
+                        range: [-2,2]         
         rgb:
             mlp:
                 num_layers: 4
@@ -141,7 +135,7 @@ optim:
         type: two_steps_with_warmup
         warm_up_end: 5000
         two_steps: [300000,400000]
-        turn_on_mask_loss: 0
+        turn_on_mask_loss: 100000
         gamma: 10.0
 
 data:
