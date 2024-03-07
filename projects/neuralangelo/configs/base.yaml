@@ -53,14 +53,14 @@ model:
                 coarse2fine:
                     enabled: True
                     init_active_level: 4
-                    step: 4000
+                    step: 5000
             gradient:
-                mode: numerical
-                taps: 4
-                masked_epsilon: True        
-                masked_epsilon_a: 50
-                masked_epsilon_b: 10
-                masked_epsilon_c: 0.25 
+              mode: numerical
+              taps: 4
+              masked_epsilon: False        
+              masked_epsilon_a: 100
+              masked_epsilon_b: 5
+              masked_epsilon_c: 0.25 
             spatialmask:
                 mlp:
                     num_layers: 1
@@ -80,8 +80,8 @@ model:
                         dict_size: 21
                         dim: 4
                         range: [-2,2]
-                    coarse2fine:
-                        enabled: False       
+                    coarse2fine_hash:
+                        enabled: True       
         rgb:
             mlp:
                 num_layers: 4
