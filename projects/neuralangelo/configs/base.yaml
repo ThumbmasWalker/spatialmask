@@ -19,7 +19,7 @@ trainer:
         render: 1.0
         eikonal: 0.1
         curvature: 5e-4
-        mask: 0
+        mask: 5e-5
     init:
         type: none
     amp_config:
@@ -53,13 +53,16 @@ model:
                 coarse2fine:
                     enabled: True
                     init_active_level: 4
-                    step: 5000
+                    step: 4000
             gradient:
               mode: numerical
               taps: 4
-              masked_epsilon: False        
-              masked_epsilon_a: 100
-              masked_epsilon_b: 5
+              fixed_prog_epsilon: False
+              prog_epsilon_rmin: 2
+              prog_epsilon_growth_rate: 1.55 
+              masked_epsilon: True        
+              masked_epsilon_a: 50
+              masked_epsilon_b: 10
               masked_epsilon_c: 0.25 
             spatialmask:
                 mlp:
@@ -81,7 +84,7 @@ model:
                         dim: 4
                         range: [-2,2]
                     coarse2fine_hash:
-                        enabled: True       
+                        enabled: False       
         rgb:
             mlp:
                 num_layers: 4
@@ -158,7 +161,7 @@ data:
     val:
         image_size: [400,400]
         batch_size: 2
-        subset: 4
+        subset: 2
         max_viz_samples: 16
     readjust:
         center: [0.,0.,0.]

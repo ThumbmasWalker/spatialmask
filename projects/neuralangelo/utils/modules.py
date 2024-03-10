@@ -34,6 +34,10 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         mask_input_dim = 3 + mask_encoding_dim
         self.mask_mlp = self.build_mlp(cfg_sdf.spatialmask.mlp, input_dim=mask_input_dim)
 
+        self.class_weights = torch.arange(cfg_sdf.encoding.levels, device='cuda' ).reshape(1, 1, 1, cfg_sdf.encoding.levels)**2
+        self.class_weights_sum = torch.sum(torch.arange(cfg_sdf.encoding.levels, device='cuda')**2)
+        
+
     def build_sdf_encoding(self, cfg_encoding):
         if cfg_encoding.type == "fourier":
             encoding_dim = 6 * cfg_encoding.levels
@@ -54,8 +58,13 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
             self.tcnn_encoding = tcnn.Encoding(3, config)
             self.resolutions = []
             for lv in range(0, num_levels):
-                size = np.floor(r_min * self.growth_rate ** lv).astype(int) + 1
+                
+                if self.cfg_sdf.gradient.fixed_prog_epsilon:
+                    size = np.floor(self.cfg_sdf.gradient.prog_epsilon_rmin * self.cfg_sdf.gradient.prog_epsilon_growth_rate ** lv).astype(int) + 1
+                else:
+                    size = np.floor(r_min * self.growth_rate ** lv).astype(int) + 1
                 self.resolutions.append(size)
+
             encoding_dim = cfg_encoding.hashgrid.dim * cfg_encoding.levels
         else:
             raise NotImplementedError("Unknown encoding type")
@@ -80,10 +89,12 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
             )
             self.mask_tcnn_encoding = tcnn.Encoding(3, config)
             self.mask_resolutions = []
+            
             for lv in range(0, num_levels):
                 size = np.floor(r_min * self.mask_growth_rate ** lv).astype(int) + 1
                 self.resolutions.append(size)
             encoding_dim = cfg_encoding.hashgrid.dim * cfg_encoding.levels
+            
         else:
             raise NotImplementedError("Unknown encoding type")
         return encoding_dim
@@ -109,28 +120,26 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         ## WIP 
         spatial_mask = self.mask_mlp(self.mask_encode(points_3D))[1] 
 
-        if self.active_levels > self.cfg_sdf.encoding.coarse2fine.init_active_level:
+        #if self.active_levels > self.cfg_sdf.encoding.coarse2fine.init_active_level:
 
             #spatial_mask = self.mask_mlp(self.mask_encode(points_3D))[1]      
 
-            if self.cfg_sdf.encoding.coarse2fine.enabled:
-                prog_mask = self._get_coarse2fine_mask(spatial_mask, feat_dim=1)
-                spatial_mask = spatial_mask * prog_mask
+        if self.cfg_sdf.encoding.coarse2fine.enabled:
+            prog_mask = self._get_coarse2fine_mask(spatial_mask, feat_dim=1)
+            spatial_mask = spatial_mask * prog_mask
 
-            points_enc = self.encode(points_3D) 
+        points_enc = self.encode(points_3D) 
 
-        
-            points_enc_reshaped = points_enc.view(points_enc.shape[0], points_enc.shape[1], points_enc.shape[2], 
+        points_enc_reshaped = points_enc.view(points_enc.shape[0], points_enc.shape[1], points_enc.shape[2], 
                                                 self.cfg_sdf.encoding.levels, self.cfg_sdf.encoding.hashgrid.dim)
-            masked = spatial_mask.unsqueeze(-1)*points_enc_reshaped
-            masked = masked.view(points_enc.shape[0], points_enc.shape[1], points_enc.shape[2], -1)
+        masked = spatial_mask.unsqueeze(-1)*points_enc_reshaped
+        masked = masked.view(points_enc.shape[0], points_enc.shape[1], points_enc.shape[2], -1)
        
+        points_enc = torch.cat([points_3D, masked], dim=-1)
 
-            points_enc = torch.cat([points_3D, masked], dim=-1)
+        # else:
 
-        else:
-
-            points_enc = torch.cat([points_3D, self.encode(points_3D)], dim=-1)
+            #points_enc = torch.cat([points_3D, self.encode(points_3D)], dim=-1)
             
         sdf, feat = self.mlp(points_enc, with_sdf=with_sdf, with_feat=with_feat)
         return sdf, feat, spatial_mask  # [...,1],[...,K]
@@ -250,20 +259,21 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
                 if self.cfg_sdf.gradient.masked_epsilon:
                     
 
-                     # FIX (UNHARDCODE)
+                    # FIX (UNHARDCODE)
                     sdf, mask = self.sdf_with_mask(x)
-                    
-                    #selecting top 2 highest masks for epsilon decision  
-                    hf_mask, indxs = torch.max(mask[...,-5:-1], dim=-1)            
-                    
-                    #numbers selected so mask=0.1 matches largests chouce from neurangelo and 0.9 matches smallest
-                    #should this be detached?
+                    with torch.no_grad():  
+                        #mask_probabilities = torch.softmax(mask, dim=-1).unsqueeze(-1)            
+                        score = torch.sum(mask * self.class_weights, dim=-1, keepdim=True)/(self.class_weights_sum/2)
+                        #print(mask, self.class_weights_sum, self.class_weights, score)
+                        #print(score.shape) 
                         
                     a = self.cfg_sdf.gradient.masked_epsilon_a
                     b = self.cfg_sdf.gradient.masked_epsilon_b
                     c = self.cfg_sdf.gradient.masked_epsilon_c
 
-                    eps =  (1/(a*torch.exp(b*(hf_mask.detach()-c)))).unsqueeze(-1)
+                    eps =  (1/(a*torch.exp(b*(score.detach()-c))))
+                    #print(eps.shape)
+                    #scheduled_eps = torch.ones_like(eps)*(self.normal_eps/np.sqrt(3))
 
                     k1 = torch.tensor([1, -1, -1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
                     k2 = torch.tensor([-1, -1, 1], dtype=x.dtype, device=x.device).view(1, 1, 1, 3)  # [3]
@@ -296,7 +306,11 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
                     hessian = None
             else:
                 raise ValueError("Only support 4 or 6 taps.")
-            
+        
+        #if self.cfg_sdf.gradient_maskedepsilon:
+        #    return gradient, hessian, eps
+        
+        #else: 
         return gradient, hessian
 
 class NeuralSDF(torch.nn.Module):
