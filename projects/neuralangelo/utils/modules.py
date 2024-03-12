@@ -30,6 +30,9 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         input_dim = 3 + encoding_dim
         self.mlp = self.build_mlp(cfg_sdf.mlp, input_dim=input_dim)
 
+        if cfg_sdf.mlp.split_feat:
+            self.feat_mlp = self.build_mlp(cfg_sdf.mlp.feat_mlp, input_dim=input_dim)
+
         mask_encoding_dim = self.build_mask_encoding(cfg_sdf.spatialmask.encoding)
         mask_input_dim = 3 + mask_encoding_dim
         self.mask_mlp = self.build_mlp(cfg_sdf.spatialmask.mlp, input_dim=mask_input_dim)
@@ -118,6 +121,8 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         
         ##change spatial mask mlp so we dont have to extract from tuple
         ## WIP 
+        #points_enc = self.encode(points_3D) 
+
         spatial_mask = self.mask_mlp(self.mask_encode(points_3D))[1] 
 
         #if self.active_levels > self.cfg_sdf.encoding.coarse2fine.init_active_level:
@@ -135,13 +140,18 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         masked = spatial_mask.unsqueeze(-1)*points_enc_reshaped
         masked = masked.view(points_enc.shape[0], points_enc.shape[1], points_enc.shape[2], -1)
        
-        points_enc = torch.cat([points_3D, masked], dim=-1)
+        masked_points_enc = torch.cat([points_3D, masked], dim=-1)
 
         # else:
 
             #points_enc = torch.cat([points_3D, self.encode(points_3D)], dim=-1)
             
-        sdf, feat = self.mlp(points_enc, with_sdf=with_sdf, with_feat=with_feat)
+        sdf, feat = self.mlp(masked_points_enc, with_sdf=with_sdf, with_feat=with_feat)
+
+        if self.cfg_sdf.mlp.split_feat:
+            points_enc = torch.cat([points_3D, points_enc], dim=-1)
+            _, feat = self.feat_mlp(points_enc, with_sdf=False, with_feat=True)
+
         return sdf, feat, spatial_mask  # [...,1],[...,K]
 
     def sdf(self, points_3D):

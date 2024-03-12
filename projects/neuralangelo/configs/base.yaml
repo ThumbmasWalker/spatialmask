@@ -41,6 +41,17 @@ model:
                 weight_norm: True
                 out_bias: 0.5
                 inside_out: False
+                split_feat: False
+                feat_mlp:
+                  num_layers: 1
+                  hidden_dim: 256
+                  skip: []
+                  activ: softplus
+                  activ_params:
+                  geometric_init: True
+                  weight_norm: True
+                  out_bias: 0.5
+                  inside_out: False                                                                                                                              
             encoding:
                 type: hashgrid
                 levels: 16
@@ -53,14 +64,14 @@ model:
                 coarse2fine:
                     enabled: True
                     init_active_level: 4
-                    step: 4000
+                    step: 3000
             gradient:
               mode: numerical
               taps: 4
-              fixed_prog_epsilon: False
+              fixed_prog_epsilon: True
               prog_epsilon_rmin: 2
               prog_epsilon_growth_rate: 1.55 
-              masked_epsilon: True        
+              masked_epsilon: False        
               masked_epsilon_a: 50
               masked_epsilon_b: 10
               masked_epsilon_c: 0.25 
@@ -122,6 +133,8 @@ model:
             type: spherical
             levels: 3
     render:
+        supersampling: False
+        supersamples: 100
         rand_rays: 512
         num_samples:
             coarse: 64

@@ -158,7 +158,7 @@ class Model(BaseModel):
             output: A dictionary containing the outputs.
         """
         output = defaultdict(list)
-        for center, ray, _ in self.ray_generator(pose, intr, image_size, full_image=True):
+        for center, ray, ray_indxs in self.ray_generator(pose, intr, image_size, full_image=True):
             ray_unit = torch_F.normalize(ray, dim=-1)  # [B,R,3]
             output_batch = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified)
             if not self.training:
@@ -170,7 +170,21 @@ class Model(BaseModel):
                 if self.cfg_render.render_mask:
                   ## TO DO UN-HARDCODE
                   mask = render.composite(output_batch['mask'], output_batch['weights'][:,:,:128,:])
+                  #mask, _ = torch.max(output_batch['mask'], dim=-2)
                   output_batch.update(mask_image=mask)
+            
+            if self.cfg_render.supersampling:
+                mask, _ = torch.max(output_batch['mask'], dim=-2)
+                #currently using hf masks, score based?
+                hf_mask, idxs = torch.max(mask[..., 14:16], dim=-1)
+                mask_probability = torch.softmax(hf_mask, dim=1)
+
+                ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
+                # index list of indexes for the ss function to work on image
+                ss_ray_image_idxs = ray_idxs[:, ss_idxs, :]
+
+                ss_centers, ss_rays = get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, 
+                                                                      num_samples=self.cfg_render.supersamples)
 
             for key, value in output_batch.items():
                 if value is not None:

@@ -98,6 +98,14 @@ def main():
         mesh.vertices = mesh.vertices * meta["sphere_radius"] + np.array(meta["sphere_center"])
         mesh.update_faces(mesh.nondegenerate_faces())
         #os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
+        #print("world coord")
+        #print(mesh.vertices)
+        #print("{cfg.data.root}")
+
+        scale_mat = np.load(f"{cfg.data.root}/cameras_sphere.npz")['scale_mat_0']
+        #print(scale_mat)
+        mesh.apply_transform(scale_mat)
+        #print(mesh.vertices)
         mesh.export(args.output_file)
 
 
