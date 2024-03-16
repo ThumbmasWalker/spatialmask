@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument("--textured", action="store_true", help="Export mesh with texture")
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
+    parser.add_argument("--bounds", default = [[-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0]])
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
 
@@ -103,7 +104,8 @@ def main():
         #print("{cfg.data.root}")
 
         scale_mat = np.load(f"{cfg.data.root}/cameras_sphere.npz")['scale_mat_0']
-        #print(scale_mat)
+
+        #print("still normalized")
         mesh.apply_transform(scale_mat)
         #print(mesh.vertices)
         mesh.export(args.output_file)

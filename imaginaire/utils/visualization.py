@@ -18,8 +18,8 @@ from matplotlib import pyplot as plt
 from torchvision.transforms import functional as torchvision_F
 
 
-def wandb_image(images, from_range=(0, 1)):
-    images = preprocess_image(images, from_range=from_range)
+def wandb_image(images, from_range=(0, 1), cmap="gray"):
+    images = preprocess_image(images, from_range=from_range, cmap=cmap)
     image_grid = torchvision.utils.make_grid(images, nrow=1, pad_value=1)
     image_grid = torchvision_F.to_pil_image(image_grid)
     wandb_image = wandb.Image(image_grid)

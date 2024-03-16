@@ -310,57 +310,47 @@ def get_center_and_ray(pose, intr, image_size):
     ray = grid_3D - center_3D  # [B,HW,3]
     return center_3D, ray
 
-'''
+def get_center_and_ray_supersampled(pose, intr, image_size, indices, num_samples=1):
+    """
+    see above
 
-def get_center_and_ray_supersampled(pose, intr, image_size, indices, num_samples=4):
-        #### WORK IN PROGRESS ### 
+    TO DO
+    Proper quater based jittering.
 
-        """
-        Args:
-        pose (tensor [3,4]/[B,3,4]): Camera pose.
-        intr (tensor [3,3]/[B,3,3]): Camera intrinsics.
-        image_size (list of int): Image size.
-        indices (tensor [N]): Indices of pixels to supersample.
-        num_samples (int): Number of samples per pixel.
-        Returns:
-        centers (tensor [N*num_samples,3]): Centers for the supersampled rays.
-        rays (tensor [N*num_samples,3]): Ray directions for the supersampled rays.
-        """
-        H, W = image_size
-        with torch.no_grad():
-            # Compute image coordinate grid.
-            y_range = torch.arange(H, dtype=torch.float32, device=pose.device).add_(0.5)
-            x_range = torch.arange(W, dtype=torch.float32, device=pose.device).add_(0.5)
-            Y, X = torch.meshgrid(y_range, x_range, indexing="ij")  # [H,W]
-            xy_grid = torch.stack([X, Y], dim=-1).view(-1, 2)  # [HW,2]
+    Ensure atleast 2 samples per pixel or something?
 
-            # Compute center and ray.
-                                                                                                                                                     if len(pose.shape) == 3:
-                                                                                                                                                         batch_size = len(pose)
-                                                                                                                                                         xy_grid = xy_grid.repeat(batch_size, 1, 1)  # [B,HW,2]
-                                                                                                                                                         grid_3D = img2cam(to_hom(xy_grid), intr)  # [B,HW,3]
-                                                                                                                                                         # Transform from camera to world coordinates.
-                                                                                                                                                         centers = cam2world(torch.zeros_like(grid_3D), pose).repeat(num_samples, 1, 1)  # [B*HW, 3]
-                                                                                                                                                         rays = cam2world(grid_3D, pose) - centers  # [B*HW, 3]
+    """
+    H, W = image_size
+    with torch.no_grad():
+        #image coord grid
+        y_range = torch.arange(H, dtype=torch.float32, device=pose.device).add_(0.5)
+        x_range = torch.arange(W, dtype=torch.float32, device=pose.device).add_(0.5)
+        Y, X = torch.meshgrid(y_range, x_range, indexing="ij") # [H,W]
+        xy_grid = torch.stack([X, Y], dim=-1).view(-1, 2)
 
-                                                                                                                                                         # Super sample pixels indicated by indices
-                                                                                                                                                         sampled_centers = []
-                                                                                                                                                         sampled_rays = []
-                                                                                                                                                         for idx in indices:
-                                                                                                                                                            for _ in range(num_samples):
-                                                                                                                                                                jitter = torch.rand(2, device=pose.device) - 0.5  # random jitter [-0.5, 0.5]
-                                                                                                                                                                idx_x = idx % W
-                                                                                                                                                                idx_y = idx // W
-                                                                                                                                                                center_idx = idx_y * W + idx_x
-                                                                                                                                                                sampled_center = centers[center_idx] + jitter
-                                                                                                                                                                sampled_ray = rays[center_idx]  # Keep the same ray for all samples within the pixel
-                                                                                                                                                                                                                                                                                          sampled_centers.append(sampled_center)
-                                                                                                                                                                                                                                                                                              sampled_rays.append(sampled_ray)                                                                                                                                                                                                                                              sampled_centers = torch.stack(sampled_centers, dim=0)
-                                                                                                                                                                                                                                                                                          sampled_rays = torch.stack(sampled_rays, dim=0)
+    ss_pixel_centers = xy_grid[indices]
 
-                                                                                                                                                                                                                                                                                          return sampled_centers, sampled_rays
+    random_offsets = torch.rand(len(indices), 2, device=pose.device) - 0.5
+    
+    ss = ss_pixel_centers + random_offsets 
+    
+    # if len(pose.shape) == 3:
+    #    batch_size = len(pose)
+    #    xy_grid = xy_grid.repeat(batch_size, 1, 1) #[B, HW, 2]
+    
+   # xy_grid = torch.cat([xy_grid, ss], dim=1) #[B, HW + N, 2]
+    #print(xy_grid.shape)
+    grid_3D = img2cam(to_hom(ss), intr) # [B, HW, 3]
+    # Transform from camera to world coordinates
+    centers = cam2world(torch.zeros_like(grid_3D), pose).repeat(num_samples, 1, 1) #[B*HW, 3]
+    rays = cam2world(grid_3D, pose) - centers 
+    # print(rays.shape)
+    # exit(-1)
+    
+    return centers, rays
 
-'''
+
+
 def get_3D_points_from_dist(center, ray_unit, dist, multi=True):
     # Two possible use cases: (1) center + ray_unit * dist, or (2) center + ray * depth
     if multi:

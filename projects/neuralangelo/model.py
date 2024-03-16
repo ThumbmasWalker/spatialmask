@@ -124,6 +124,7 @@ class Model(BaseModel):
             lf2_map=self.to_full_val_image(lf_mask2.unsqueeze(dim=-1)),
             mf_map=self.to_full_val_image(mf_mask.unsqueeze(dim=-1)),
             hf_map=self.to_full_val_image(hf_mask.unsqueeze(dim=-1)),
+            mask_prob_map=self.to_full_val_image(output["mask_prob"].unsqueeze(dim=-1)),
             #mask1_map=self.to_full_val_image(mask1.unsqueeze(dim=-1)),
             #mask2_map=self.to_full_val_image(mask2.unsqueeze(dim=-1)),
             #mask3_map = self.to_full_val_image(mask3.unsqueeze(dim=-1)),
@@ -158,9 +159,9 @@ class Model(BaseModel):
             output: A dictionary containing the outputs.
         """
         output = defaultdict(list)
-        for center, ray, ray_indxs in self.ray_generator(pose, intr, image_size, full_image=True):
+        for center, ray, ray_idxs in self.ray_generator(pose, intr, image_size, full_image=True):
             ray_unit = torch_F.normalize(ray, dim=-1)  # [B,R,3]
-            output_batch = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified)
+            output_batch = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified, ray_idx=ray_idxs, supersample=False)
             if not self.training:
                 #print(output_batch['dists'].shape, output_batch['mask'].shape)
                 dist = render.composite(output_batch["dists"], output_batch["weights"])  # [B,R,1]
@@ -173,18 +174,22 @@ class Model(BaseModel):
                   #mask, _ = torch.max(output_batch['mask'], dim=-2)
                   output_batch.update(mask_image=mask)
             
-            if self.cfg_render.supersampling:
-                mask, _ = torch.max(output_batch['mask'], dim=-2)
-                #currently using hf masks, score based?
-                hf_mask, idxs = torch.max(mask[..., 14:16], dim=-1)
-                mask_probability = torch.softmax(hf_mask, dim=1)
+            
+                if self.cfg_render.supersampling:
+                 # mask, _ = torch.max(output_batch['mask'], dim=-2)
+                  #currently using hf masks, score based?
+                  hf_mask, idxs = torch.max(mask[..., 14:16], dim=-1)
 
-                ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
-                # index list of indexes for the ss function to work on image
-                ss_ray_image_idxs = ray_idxs[:, ss_idxs, :]
+                  mask_probability = torch.softmax(hf_mask*10, dim=1)
+                  #print(mask_probability.max())
+                  output_batch["mask_prob"] = mask_probability
+                 # ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
+                  # index list of indexes for the ss function to work on image
+                 # ss_ray_image_idxs = ray_idxs[:, ss_idxs]
 
-                ss_centers, ss_rays = get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, 
-                                                                      num_samples=self.cfg_render.supersamples)
+                 # ss_centers, ss_rays = camera.get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, num_samples=1)
+                
+                  # print(torch.unique(ss_idxs, return_counts=True))
 
             for key, value in output_batch.items():
                 if value is not None:
@@ -199,10 +204,12 @@ class Model(BaseModel):
         center = nerf_util.slice_by_ray_idx(center, ray_idx)  # [B,R,3]
         ray = nerf_util.slice_by_ray_idx(ray, ray_idx)  # [B,R,3]
         ray_unit = torch_F.normalize(ray, dim=-1)  # [B,R,3]
-        output = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified)
+        output = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified, 
+                                  ray_idx=ray_idx, supersample=self.cfg_render.supersampling,
+                                  pose=pose, intr=intr, image_size=image_size)
         return output
 
-    def render_rays(self, center, ray_unit, sample_idx=None, stratified=False):
+    def render_rays(self, center, ray_unit, sample_idx=None, stratified=False, ray_idx=None, supersample=False, pose=None, intr=None, image_size=None):
         with torch.no_grad():
             near, far, outside = self.get_dist_bounds(center, ray_unit)
         app, app_outside = self.get_appearance_embedding(sample_idx, ray_unit.shape[1])
@@ -225,17 +232,90 @@ class Model(BaseModel):
             rgb = rgb + (1 - opacity_all)
         # Collect output.
 
-        output = dict(
-            rgb=rgb,  # [B,R,3]
-            opacity=output_object["opacity"],  # [B,R,1]/None
-            outside=outside,  # [B,R,1]
-            dists=dists,  # [B,R,No+Nb,1]
-            weights=weights,  # [B,R,No+Nb,1]
-            gradient=output_object["gradient"],  # [B,R,3]/None
-            gradients=output_object["gradients"],  # [B,R,No,3]
-            hessians=output_object["hessians"],  # [B,R,No,3]/None
-            mask=output_object["mask"]
-        )
+        
+        if supersample and self.neural_sdf.active_levels >= self.cfg_render.supersample_activate_level:
+             #print(output_object['mask'].shape) 
+            # mask, _ = torch.max(output_object['mask'], dim=-2)
+             
+             mask = render.composite(output_object['mask'], weights[:,:,:128,:])
+             #currently using max hf masks, score based?
+             hf_mask, idxs = torch.max(mask[..., 14:16]*10, dim=-1)
+             mask_probability = torch.softmax(hf_mask, dim=1)
+    
+             ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
+             # index list of indexes for the ss function to work on image
+             ss_ray_image_idxs = ray_idx[:, ss_idxs]
+
+             ss_centers, ss_rays = camera.get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, num_samples=1)    
+             ss_ray_unit = torch_F.normalize(ss_rays, dim=-1)    
+                
+             #SPEED UP Can we avoid this by simply indexing?
+             with torch.no_grad():
+                ss_near, ss_far, ss_outside = self.get_dist_bounds(ss_centers, ss_ray_unit)
+             
+             ss_app, ss_app_outside = self.get_appearance_embedding(sample_idx, ss_ray_unit.shape[1])
+
+             ss_output_object = self.render_rays_object(ss_centers, ss_ray_unit, ss_near, ss_far, ss_outside, ss_app, stratified=stratified)
+             
+             if self.with_background:
+                ss_output_background = self.render_rays_background(ss_centers, ss_ray_unit, ss_far, ss_app_outside, stratified=stratified)
+                # Concatenate object and background samples.
+                ss_rgbs = torch.cat([ss_output_object["rgbs"], ss_output_background["rgbs"]], dim=2)  # [B,R,No+Nb,3]
+                ss_dists = torch.cat([ss_output_object["dists"], ss_output_background["dists"]], dim=2)  # [B,R,No+Nb,1]
+                ss_alphas = torch.cat([ss_output_object["alphas"], ss_output_background["alphas"]], dim=2)  # [B,R,No+Nb]
+             else:
+                ss_rgbs = output_object_ss["rgbs"]  # [B,R,No,3]
+                ss_dists = output_object_ss["dists"]  # [B,R,No,1]
+                ss_alphas = output_object_ss["alphas"]  # [B,R,No]
+           
+             ss_weights = render.alpha_compositing_weights(ss_alphas)  # [B,R,No+Nb,1]
+             # Compute weights and composite samples.
+             ss_rgb = render.composite(ss_rgbs, ss_weights)  # [B,R,3]
+             
+            
+             uniq_idxs, count = torch.unique(ss_idxs, return_counts=True)
+             #FIX ME: make efficient. Average over super samples
+             for uniq_idx, count in zip(uniq_idxs, count):
+                idxmask = torch.where(ss_idxs.squeeze()==uniq_idx, 1, 0)
+                ss_for_av = torch.index_select(ss_rgb,1, idxmask.nonzero().squeeze(-1))
+                rgb[:, uniq_idx, :] = (rgb[:, uniq_idx, :] + torch.sum(ss_for_av, dim=1))/(1+count)
+                
+
+
+             if self.white_background:
+                ss_opacity_all = render.composite(1., ss_weights)  # [B,R,1]
+                         
+             opacity = output_object["opacity"] #torch.cat([output_object["opacity"], ss_output_object["opacity"]], dim=1) if output_object["opacity"] != None else None  # [B,R,1]/None
+             
+             gradient = output_object["gradient"] #torch.cat([output_object["gradient"], ss_output_object["gradient"]], dim=1) if output_object["gradient"] != None else None  # [B,R,1]/None
+            
+             gradients = output_object["gradients"] #torch.cat([output_object["gradients"], ss_output_object["gradients"]], dim=1) if output_object["gradients"] != None else None  # [B,R,1]/None
+             
+             hessians  = output_object["hessians"] #torch.cat([outputii"_object["hessians"], ss_output_object["hessians"]], dim=1) if output_object["hessians"] != None else None  # [B,R,1]/None
+
+             output = dict(
+                rgb=rgb,  # [B,R,3]
+                opacity=opacity,  # [B,R,1]/None
+                outside=outside,  # [B,R,1]
+                dists=dists,#torch.cat([dists, ss_dists], dim=1),  # [B,R,No+Nb,1]
+                weights=weights, #torch.cat([weights, ss_weights], dim=1),  # [B,R,No+Nb,1]
+                gradient=gradient,  # [B,R,1]/None
+                gradients=gradients,  # [B,R,1]/None
+                hessians=hessians,  # [B,R,1]/None
+                mask=output_object["mask"]
+             )
+        else:
+             output = dict(
+                     rgb=rgb,  # [B,R,3]
+                     opacity=output_object["opacity"],  # [B,R,1]/None
+                     outside=outside,  # [B,R,1]
+                     dists=dists,  # [B,R,No+Nb,1]
+                     weights=weights,  # [B,R,No+Nb,1]
+                     gradient=output_object["gradient"],  # [B,R,3]/None
+                     gradients=output_object["gradients"],  # [B,R,No,3]
+                     hessians=output_object["hessians"],  # [B,R,No,3]/None
+                     mask=output_object["mask"]
+             )
 
 
         return output

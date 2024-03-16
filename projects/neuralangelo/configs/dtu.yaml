@@ -25,7 +25,7 @@ model:
 
 data:
     type: projects.neuralangelo.data
-    root: ../../../datasets/dtu/dtu_scan24
+    root: ../../../datasets/dtu/dtu_scan37
     train:
         image_size: [1200,1600]
         batch_size: 1

@@ -18,7 +18,7 @@ import torch.nn.functional as torch_F
 class MLPforNeuralSDF(torch.nn.Module):
 
     def __init__(self, layer_dims, skip_connection=[], activ=None, use_layernorm=False, use_weightnorm=False,
-                 geometric_init=False, out_bias=0., invert=False):
+                 geometric_init=False, out_bias=0., feat_out_bias=0.0, invert=False):
         """Initialize a multi-layer perceptron with skip connection.
         Args:
             layer_dims: A list of integers representing the number of channels in each layer.
@@ -45,7 +45,7 @@ class MLPforNeuralSDF(torch.nn.Module):
             if use_layernorm and li != len(layer_dim_pairs) - 1:
                 self.layer_norm.append(torch.nn.LayerNorm(k_out))
             if li == len(layer_dim_pairs) - 1:
-                self.linears[-1].bias.data.fill_(0.0)
+                self.linears[-1].bias.data.fill_(feat_out_bias)
         # SDF prediction layer
         self.linear_sdf = torch.nn.Linear(k_in, 1)
         if geometric_init:

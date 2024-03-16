@@ -35,6 +35,8 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
 
         mask_encoding_dim = self.build_mask_encoding(cfg_sdf.spatialmask.encoding)
         mask_input_dim = 3 + mask_encoding_dim
+        
+
         self.mask_mlp = self.build_mlp(cfg_sdf.spatialmask.mlp, input_dim=mask_input_dim)
 
         self.class_weights = torch.arange(cfg_sdf.encoding.levels, device='cuda' ).reshape(1, 1, 1, cfg_sdf.encoding.levels)**2
@@ -113,7 +115,7 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
             activ = get_activation(cfg_mlp.activ)
         mlp = MLPforNeuralSDF(layer_dims, skip_connection=cfg_mlp.skip, activ=activ,
                                    use_weightnorm=cfg_mlp.weight_norm, geometric_init=cfg_mlp.geometric_init,
-                                   out_bias=cfg_mlp.out_bias, invert=cfg_mlp.inside_out)
+                                   out_bias=cfg_mlp.out_bias, feat_out_bias=cfg_mlp.feat_out_bias, invert=cfg_mlp.inside_out)
 
         return mlp
 

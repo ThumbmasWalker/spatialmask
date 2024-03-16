@@ -14,8 +14,8 @@ data:
     type: projects.neuralangelo.data
     val:
         image_size:
-        - 500
-        - 500
+        - 640
+        - 640
 model:
     appear_embed:
         enabled: false
