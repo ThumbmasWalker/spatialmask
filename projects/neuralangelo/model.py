@@ -71,7 +71,11 @@ class Model(BaseModel):
             self.background_nerf = BackgroundNeRF(cfg_model.background, appear_embed=cfg_model.appear_embed)
         else:
             self.background_nerf = None
-        self.s_var = torch.nn.Parameter(torch.tensor(cfg_model.object.s_var.init_val, dtype=torch.float32))
+        if not cfg_model.object.s_var.scheduled:
+            self.s_var = torch.nn.Parameter(torch.tensor(cfg_model.object.s_var.init_val, dtype=torch.float32))
+
+    def set_svar(self):
+        self.s_var = torch.tensor(12 + 5/(1-(2.7183**(2.5*self.progress + 0.4))), dtype=torch.float32)
 
     def forward(self, data):
         # Randomly sample and render the pixels.
@@ -124,7 +128,7 @@ class Model(BaseModel):
             lf2_map=self.to_full_val_image(lf_mask2.unsqueeze(dim=-1)),
             mf_map=self.to_full_val_image(mf_mask.unsqueeze(dim=-1)),
             hf_map=self.to_full_val_image(hf_mask.unsqueeze(dim=-1)),
-            mask_prob_map=self.to_full_val_image(output["mask_prob"].unsqueeze(dim=-1)),
+           # mask_prob_map=self.to_full_val_image(output["mask_prob"].unsqueeze(dim=-1)),
             #mask1_map=self.to_full_val_image(mask1.unsqueeze(dim=-1)),
             #mask2_map=self.to_full_val_image(mask2.unsqueeze(dim=-1)),
             #mask3_map = self.to_full_val_image(mask3.unsqueeze(dim=-1)),
@@ -161,7 +165,8 @@ class Model(BaseModel):
         output = defaultdict(list)
         for center, ray, ray_idxs in self.ray_generator(pose, intr, image_size, full_image=True):
             ray_unit = torch_F.normalize(ray, dim=-1)  # [B,R,3]
-            output_batch = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified, ray_idx=ray_idxs, supersample=False)
+            output_batch = self.render_rays(center, ray_unit, sample_idx=sample_idx, stratified=stratified, ray_idx=ray_idxs, 
+                                            pose=pose, intr=intr, image_size=image_size, supersample=self.cfg_render.supersampling)
             if not self.training:
                 #print(output_batch['dists'].shape, output_batch['mask'].shape)
                 dist = render.composite(output_batch["dists"], output_batch["weights"])  # [B,R,1]
@@ -174,7 +179,7 @@ class Model(BaseModel):
                   #mask, _ = torch.max(output_batch['mask'], dim=-2)
                   output_batch.update(mask_image=mask)
             
-            
+                '''
                 if self.cfg_render.supersampling:
                  # mask, _ = torch.max(output_batch['mask'], dim=-2)
                   #currently using hf masks, score based?
@@ -183,18 +188,65 @@ class Model(BaseModel):
                   mask_probability = torch.softmax(hf_mask*10, dim=1)
                   #print(mask_probability.max())
                   output_batch["mask_prob"] = mask_probability
-                 # ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
+                  ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
                   # index list of indexes for the ss function to work on image
-                 # ss_ray_image_idxs = ray_idxs[:, ss_idxs]
+                  ss_ray_image_idxs = ray_idxs[:, ss_idxs]
 
-                 # ss_centers, ss_rays = camera.get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, num_samples=1)
+                  ss_centers, ss_rays = camera.get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, num_samples=1)
                 
+             
+                  ss_ray_unit = torch_F.normalize(ss_rays, dim=-1)    
+                
+                  #SPEED UP Can we avoid this by simply indexing?
+                  with torch.no_grad():
+                    ss_near, ss_far, ss_outside = self.get_dist_bounds(ss_centers, ss_ray_unit)
+             
+                  ss_app, ss_app_outside = self.get_appearance_embedding(sample_idx, ss_ray_unit.shape[1])
+
+                  ss_output_object = self.render_rays_object(ss_centers, ss_ray_unit, ss_near, ss_far, ss_outside, ss_app, stratified=stratified)
+             
+                  if self.with_background:
+                    ss_output_background = self.render_rays_background(ss_centers, ss_ray_unit, ss_far, ss_app_outside, stratified=stratified)
+                    # Concatenate object and background samples.
+                    ss_rgbs = torch.cat([ss_output_object["rgbs"], ss_output_background["rgbs"]], dim=2)  # [B,R,No+Nb,3]
+                    ss_dists = torch.cat([ss_output_object["dists"], ss_output_background["dists"]], dim=2)  # [B,R,No+Nb,1]
+                    ss_alphas = torch.cat([ss_output_object["alphas"], ss_output_background["alphas"]], dim=2)  # [B,R,No+Nb]
+                 
+                  else:
+                    ss_rgbs = output_object_ss["rgbs"]  # [B,R,No,3]
+                    ss_dists = output_object_ss["dists"]  # [B,R,No,1]
+                    ss_alphas = output_object_ss["alphas"]  # [B,R,No]
+           
+                  ss_weights = render.alpha_compositing_weights(ss_alphas)  # [B,R,No+Nb,1]
+                  # Compute weights and composite samples.
+                  ss_rgb = render.composite(ss_rgbs, ss_weights)  # [B,R,3]
+             
+            
+                  uniq_idxs, count = torch.unique(ss_idxs, return_counts=True)
+                  #FIX ME: make efficient. Average over super samples
+                  for uniq_idx, count in zip(uniq_idxs, count):
+                    idxmask = torch.where(ss_idxs.squeeze()==uniq_idx, 1, 0)
+                    ss_for_av = torch.index_select(ss_rgb, 1, idxmask.nonzero().squeeze(-1))
+                    rgb[:, uniq_idx, :] = (rgb[:, uniq_idx, :] + torch.sum(ss_for_av, dim=1))/(1+count)
+                
+
+
+                  if self.white_background:
+                    ss_opacity_all = render.composite(1., ss_weights)  # [B,R,1]
+                         
+                  opacity = torch.cat([output_batch["opacity"], ss_output_object["opacity"]], dim=1) if output_object["opacity"] != None else None  # [B,R,1]/None
+             
+                  gradient = torch.cat([output_batch["gradient"], ss_output_object["gradient"]], dim=1) if output_object["gradient"] != None else None  # [B,R,1]/None
+            
+                  gradients = torch.cat([output_batch["gradients"], ss_output_object["gradients"]], dim=1) if output_object["gradients"] != None else None  # [B,R,1]/None
+                  '''    
                   # print(torch.unique(ss_idxs, return_counts=True))
 
             for key, value in output_batch.items():
-                if value is not None:
+                if value is not None:    
                     output[key].append(value.detach())
         # Concat each item (list) in output into one tensor. Concatenate along the ray dimension (1)
+       
         for key, value in output.items():
             output[key] = torch.cat(value, dim=1)
         return output
@@ -232,20 +284,28 @@ class Model(BaseModel):
             rgb = rgb + (1 - opacity_all)
         # Collect output.
 
-        
+
         if supersample and self.neural_sdf.active_levels >= self.cfg_render.supersample_activate_level:
              #print(output_object['mask'].shape) 
             # mask, _ = torch.max(output_object['mask'], dim=-2)
              
              mask = render.composite(output_object['mask'], weights[:,:,:128,:])
              #currently using max hf masks, score based?
-             hf_mask, idxs = torch.max(mask[..., 14:16]*10, dim=-1)
-             mask_probability = torch.softmax(hf_mask, dim=1)
-    
+             hf_mask, idxs = torch.max(mask[..., 14:16], dim=-1)
+            # print(hf_mask.max())
+            
+             #mask_probability = torch.softmax(hf_mask, dim=1)
+             
+             mask_probability = (hf_mask + 1e-6)/(hf_mask.sum(dim=1) + 1e-6) 
+             print(mask_probability.mean(), mask_probability.std(), mask_probability.max())
+
              ss_idxs = torch.multinomial(mask_probability, self.cfg_render.supersamples, replacement=True).squeeze()
              # index list of indexes for the ss function to work on image
-             ss_ray_image_idxs = ray_idx[:, ss_idxs]
+             uniq, count = torch.unique(ss_idxs, return_counts=True)
+            # print(count.max())
 
+             ss_ray_image_idxs = ray_idx[:, ss_idxs]
+            
              ss_centers, ss_rays = camera.get_center_and_ray_supersampled(pose, intr, image_size, ss_ray_image_idxs, num_samples=1)    
              ss_ray_unit = torch_F.normalize(ss_rays, dim=-1)    
                 
@@ -278,6 +338,7 @@ class Model(BaseModel):
              for uniq_idx, count in zip(uniq_idxs, count):
                 idxmask = torch.where(ss_idxs.squeeze()==uniq_idx, 1, 0)
                 ss_for_av = torch.index_select(ss_rgb,1, idxmask.nonzero().squeeze(-1))
+               # print(ss_for_av, 'RGB',  rgb[:, uniq_idx, :])
                 rgb[:, uniq_idx, :] = (rgb[:, uniq_idx, :] + torch.sum(ss_for_av, dim=1))/(1+count)
                 
 

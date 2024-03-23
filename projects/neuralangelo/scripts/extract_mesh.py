@@ -37,7 +37,10 @@ def parse_args():
     parser.add_argument("--textured", action="store_true", help="Export mesh with texture")
     parser.add_argument("--keep_lcc", action="store_true",
                         help="Keep only largest connected component. May remove thin structures.")
-    parser.add_argument("--bounds", default = [[-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0]])
+    parser.add_argument("--bounds_x", nargs="*", type=float, default = None)
+    parser.add_argument("--bounds_y", nargs="*", type=float, default = None)  
+    parser.add_argument("--bounds_z", nargs="*", type=float, default = None)
+    parser.add_argument("--normalize", type=bool, default = False)
     args, cfg_cmd = parser.parse_known_args()
     return args, cfg_cmd
 
@@ -77,8 +80,22 @@ def main():
     meta_fname = f"{cfg.data.root}/transforms.json"
     with open(meta_fname) as file:
         meta = json.load(file)
+    
+    if args.bounds_x != None:
+        bounds_x = args.bounds_x
+        bounds_y = args.bounds_y
+        bounds_z = args.bounds_z
+        
+        bounds = []
+        bounds.append(bounds_x)
+        bounds.append(bounds_y)
+        bounds.append(bounds_z)
 
-    if "aabb_range" in meta:
+        bounds = np.array(bounds)
+
+        print("bounds:", bounds)
+
+    elif "aabb_range" in meta:
         bounds = (np.array(meta["aabb_range"]) - np.array(meta["sphere_center"])[..., None]) / meta["sphere_radius"]
     else:
         bounds = np.array([[-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0]])
@@ -102,11 +119,13 @@ def main():
         #print("world coord")
         #print(mesh.vertices)
         #print("{cfg.data.root}")
+        if args.normalize:
+            scale_mat = np.load(f"{cfg.data.root}/cameras_sphere.npz")['scale_mat_0']
 
-        scale_mat = np.load(f"{cfg.data.root}/cameras_sphere.npz")['scale_mat_0']
-
+        
         #print("still normalized")
-        mesh.apply_transform(scale_mat)
+            mesh.apply_transform(scale_mat)
+        
         #print(mesh.vertices)
         mesh.export(args.output_file)
 

@@ -126,7 +126,11 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         #points_enc = self.encode(points_3D) 
 
         spatial_mask = self.mask_mlp(self.mask_encode(points_3D))[1] 
-
+ 
+        ## Don't apply mask to first 4 levels?
+        #maskmask = torch.ones_like(spatial_mask, requires_grad=False)
+        #spatial_mask = torch.cat([maskmask[...,:4], spatial_mask[...,4:]], dim=-1) 
+    
         #if self.active_levels > self.cfg_sdf.encoding.coarse2fine.init_active_level:
 
             #spatial_mask = self.mask_mlp(self.mask_encode(points_3D))[1]      
@@ -134,6 +138,8 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         if self.cfg_sdf.encoding.coarse2fine.enabled:
             prog_mask = self._get_coarse2fine_mask(spatial_mask, feat_dim=1)
             spatial_mask = spatial_mask * prog_mask
+            
+        #print(spatial_mask)
 
         points_enc = self.encode(points_3D) 
 
@@ -153,7 +159,7 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
         if self.cfg_sdf.mlp.split_feat:
             points_enc = torch.cat([points_3D, points_enc], dim=-1)
             _, feat = self.feat_mlp(points_enc, with_sdf=False, with_feat=True)
-
+            
         return sdf, feat, spatial_mask  # [...,1],[...,K]
 
     def sdf(self, points_3D):
@@ -208,6 +214,7 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
     
 
     def set_active_levels(self, current_iter=None):
+        self.current_iter = current_iter
         anneal_levels = max((current_iter - self.warm_up_end) // self.cfg_sdf.encoding.coarse2fine.step, 1)
         self.anneal_levels = min(self.cfg_sdf.encoding.levels, anneal_levels)
         self.active_levels = max(self.cfg_sdf.encoding.coarse2fine.init_active_level, self.anneal_levels)
@@ -221,8 +228,24 @@ class SpatialMaskNeuralSDF(torch.nn.Module):
 
     @torch.no_grad()
     def _get_coarse2fine_mask(self, points_enc, feat_dim):
+        
+        #`if self.current_iter == 0:
+         #   self.act_lvl = 0
+
+        #if self.act_lvl != self.active_levels:
+         #   it = 0 
+        
+        #act_lvl = self.active_levels
+        #it += 1
+
+
         mask = torch.zeros_like(points_enc)
         mask[..., :(self.active_levels * feat_dim)] = 1
+        
+        #reveal_param = min((it / self.cfg_sdf.encoding.coarse2fine.step)*2, 1)
+
+        #mask[..., (self.active_levels-1) * feat_dim : (self.active_levels*feat_dim)] = reveal_param
+        
         return mask
 
     def compute_gradients(self, x, training=False, sdf=None):

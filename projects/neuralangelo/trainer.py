@@ -38,6 +38,9 @@ class Trainer(BaseTrainer):
     def setup_scheduler(self, cfg, optim):
         return get_scheduler(cfg.optim, optim)
 
+    def svar_loss(self, s_var):
+        return 1/torch.log(s_var)
+
     def _compute_loss(self, data, mode=None):
         if mode == "train":
             # Compute loss only on randomly sampled rays.
@@ -49,6 +52,8 @@ class Trainer(BaseTrainer):
                 self.losses["curvature"] = curvature_loss(data["hessians"], outside=data["outside"])
             if "mask" in self.weights:
                 self.losses["mask"] = mask_loss(data["mask"], outside=data["outside"])
+            if "svar" in self.weights:
+                self.losses["svar"] = self.svar_loss(self.model_module.s_var)
         else:
             # Compute loss on the entire image.
             self.losses["render"] = self.criteria["render"](data["rgb_map"], data["image"])
@@ -86,6 +91,9 @@ class Trainer(BaseTrainer):
 
         elif self.cfg_gradient.mode == "numerical":
             model.neural_sdf.set_normal_epsilon()
+        
+        if self.cfg.model.object.s_var.scheduled:
+            model.set_svar()
 
         return super()._start_of_iteration(data, current_iteration)
 
@@ -124,7 +132,7 @@ class Trainer(BaseTrainer):
                 f"{mode}/vis/lf2_mask": wandb_image(data["lf2_map"], cmap="jet"),
                 f"{mode}/vis/mf_mask": wandb_image(data["mf_map"], cmap="jet"),
                 f"{mode}/vis/hf_mask": wandb_image(data["hf_map"], cmap="jet"),
-                f"{mode}/vis/mask_probability": wandb_image(data["mask_prob_map"]),
+               # f"{mode}/vis/mask_probability": wandb_image(data["mask_prob_map"]),
                 #f"{mode}/vis/mask1": wandb_image(data["mask1_map"]),
                 #f"{mode}/vis/mask2": wandb_image(data["mask2_map"]),
                 #f"{mode}/vis/mask3": wandb_image(data["mask3_map"]),

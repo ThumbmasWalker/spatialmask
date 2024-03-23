@@ -327,13 +327,23 @@ def get_center_and_ray_supersampled(pose, intr, image_size, indices, num_samples
         x_range = torch.arange(W, dtype=torch.float32, device=pose.device).add_(0.5)
         Y, X = torch.meshgrid(y_range, x_range, indexing="ij") # [H,W]
         xy_grid = torch.stack([X, Y], dim=-1).view(-1, 2)
-
+     
+    #print(xy_grid) 
+   # print(xy_grid)
+    #print(xy_grid.shape)
     ss_pixel_centers = xy_grid[indices]
-
-    random_offsets = torch.rand(len(indices), 2, device=pose.device) - 0.5
+    #print(ss_pixel_centers.shape)
+    #print(xy_grid[indices].shape)
+    #exit(-1)
+    #print(ss_pixel_centers)
+    random_offsets = torch.rand(indices.shape[1], 2, device=pose.device) - 0.5
+    #print(random_offsets)
+    #print(ss_pixel_centers)
     
     ss = ss_pixel_centers + random_offsets 
-    
+   # print(ss)
+   # print(ss.shape)
+   # exit(-1)
     # if len(pose.shape) == 3:
     #    batch_size = len(pose)
     #    xy_grid = xy_grid.repeat(batch_size, 1, 1) #[B, HW, 2]
@@ -344,9 +354,9 @@ def get_center_and_ray_supersampled(pose, intr, image_size, indices, num_samples
     # Transform from camera to world coordinates
     centers = cam2world(torch.zeros_like(grid_3D), pose).repeat(num_samples, 1, 1) #[B*HW, 3]
     rays = cam2world(grid_3D, pose) - centers 
-    # print(rays.shape)
+    #print(rays.shape)
     # exit(-1)
-    
+   
     return centers, rays
 
 

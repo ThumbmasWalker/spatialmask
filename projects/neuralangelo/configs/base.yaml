@@ -42,7 +42,7 @@ model:
                 out_bias: 0.5
                 feat_out_bias: 0
                 inside_out: False
-                split_feat: False
+                split_feat: True
                 feat_mlp:
                   num_layers: 1
                   hidden_dim: 256
@@ -98,7 +98,7 @@ model:
                         dim: 4
                         range: [-2,2]
                     coarse2fine_hash:
-                        enabled: False       
+                        enabled: True       
         rgb:
             mlp:
                 num_layers: 4
@@ -112,6 +112,7 @@ model:
                 type: spherical
                 levels: 3
         s_var:
+            scheduled: False
             init_val: 3.
             anneal_end: 0.1
     background:
@@ -136,7 +137,7 @@ model:
             type: spherical
             levels: 3
     render:
-        supersampling: True
+        supersampling: true
         supersamples: 200
         supersample_activate_level: 14
         rand_rays: 512
